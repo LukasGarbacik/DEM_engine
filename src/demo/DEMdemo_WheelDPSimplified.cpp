@@ -1,7 +1,7 @@
 //  Copyright (c) 2021, SBEL GPU Development Team
 //  Copyright (c) 2021, University of Wisconsin - Madison
 //
-//	SPDX-License-Identifier: BSD-3-Clause
+//      SPDX-License-Identifier: BSD-3-Clause
 
 // =============================================================================
 // A simplified wheel drawbar-pull test, featuring Curiosity wheel geometry and
@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <map>
 #include <random>
+#include <fstream> 
 
 using namespace deme;
 
@@ -31,6 +32,11 @@ int main() {
     std::filesystem::path out_dir = std::filesystem::current_path();
     out_dir += "/DemoOutput_WheelDPSimplified";
     std::filesystem::create_directory(out_dir);
+
+
+    std::ofstream data_file(out_dir / "data.txt");
+    // Write header for the data file
+    data_file << "Time Sinkage TCF Drawbar CFUR TWD\n";
 
     DEMSolver DEMSim;
     DEMSim.SetVerbosity(INFO);
@@ -47,11 +53,12 @@ int main() {
     auto mat_type_terrain = DEMSim.LoadMaterial({{"E", 1e9}, {"nu", 0.3}, {"CoR", 0.4}, {"mu", 0.5}, {"Crr", 0.01}});
     // If you don't have this line, then mu between drum material and granular material will be the average of the
     // two.
-    DEMSim.SetMaterialPropertyPair("mu", mat_type_wheel, mat_type_terrain, 0.8);
-    DEMSim.SetMaterialPropertyPair("CoR", mat_type_wheel, mat_type_terrain, 0.6);
+    DEMSim.SetMaterialPropertyPair("mu", mat_type_wheel, mat_type_terrain, 0.35);
+    DEMSim.SetMaterialPropertyPair("CoR", mat_type_wheel, mat_type_terrain, 0.4);
 
     // `World'
-    float G_mag = 9.81;
+    float G_earth_mag = 9.81;
+    float G_phobos_mag = 0.0057;
     float step_size = 5e-6;
     double world_size_y = 1.;
     double world_size_x = 2.;
@@ -64,21 +71,22 @@ int main() {
 
     // Define the wheel geometry
     float wheel_rad = 0.25;
-    float wheel_width = 0.2;
+   float wheel_width = 0.2;
     float wheel_weight = 100.;
-    float wheel_mass = wheel_weight / G_mag;
+    float wheel_mass = wheel_weight / G_earth_mag;
     float total_pressure = 200.0;
     float added_pressure = total_pressure - wheel_weight;
     float wheel_IYY = wheel_mass * wheel_rad * wheel_rad / 2;
     float wheel_IXX = (wheel_mass / 12) * (3 * wheel_rad * wheel_rad + wheel_width * wheel_width);
     auto wheel =
-        DEMSim.AddWavefrontMeshObject(GetDEMEDataFile("mesh/rover_wheels/viper_wheel_right.obj"), mat_type_wheel);
+        DEMSim.AddWavefrontMeshObject(GetDEMEDataFile("mesh/rover_wheels/wheels/wheel1.obj"), mat_type_wheel);
     wheel->SetMass(wheel_mass);
     wheel->SetMOI(make_float3(wheel_IXX, wheel_IYY, wheel_IXX));
     // Give the wheel a family number so we can potentially add prescription
     wheel->SetFamily(1);
-    // Track it
+    
     auto wheel_tracker = DEMSim.Track(wheel);
+
 
     // Define the terrain particle templates
     // Calculate its mass and MOI
@@ -125,7 +133,7 @@ int main() {
     double sim_end = 6.;
     // Note: this wheel is not `dictated' by our prescrption of motion because it can still fall onto the ground
     // (move freely linearly)
-    DEMSim.SetFamilyPrescribedAngVel(1, "0", to_string_with_precision(w_r), "0", false);
+   DEMSim.SetFamilyPrescribedAngVel(1, "0", to_string_with_precision(w_r), "0", false);
     // An extra force (acceleration) is addedd to simulate the load that the wheel carries
     DEMSim.AddFamilyPrescribedAcc(1, "none", "none", to_string_with_precision(-added_pressure / wheel_mass));
     // `Real sim' family number
@@ -145,7 +153,7 @@ int main() {
 
     // Make ready for simulation
     DEMSim.SetInitTimeStep(step_size);
-    DEMSim.SetGravitationalAcceleration(make_float3(0, 0, -G_mag));
+    DEMSim.SetGravitationalAcceleration(make_float3(0, 0, -G_earth_mag));
     // Max velocity info is generally just for the solver's reference and the user do not have to set it. The solver
     // wouldn't take into account a vel larger than this when doing async-ed contact detection: but this vel won't
     // happen anyway and if it does, something already went wrong.
@@ -153,7 +161,6 @@ int main() {
     // Error out vel is used to force the simulation to abort when something goes wrong.
     DEMSim.SetErrorOutVelocity(35.);
     DEMSim.SetExpandSafetyMultiplier(1.);
-    //// TODO: Implement the better CDUpdateFreq adapt algorithm that overperforms the current one...
     DEMSim.SetCDUpdateFreq(40);
     DEMSim.DisableAdaptiveUpdateFreq();
     DEMSim.Initialize();
@@ -177,7 +184,6 @@ int main() {
         sprintf(meshname, "%s/DEMdemo_mesh_%04d.vtk", out_dir.c_str(), currframe++);
         DEMSim.WriteSphereFile(std::string(filename));
         DEMSim.WriteMeshFile(std::string(meshname));
-
         DEMSim.DoDynamics(frame_time);
     }
 
@@ -186,10 +192,38 @@ int main() {
     // You don't have to do this! I am just testing if sync-ing it twice breaks the system.
     DEMSim.DoDynamicsThenSync(0);
     DEMSim.ChangeFamily(1, 2);
+    DEMSim.SetGravitationalAcceleration(make_float3(0, 0, -G_phobos_mag));
 
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+    
+    // Variables to track the requested metrics
+    float max_sinkage = 0.0f;
+    float initial_wheel_height = wheel_tracker->Pos().z;
 
     for (double t = 0; t < sim_end; t += step_size, curr_step++) {
+        // Get wheel position and forces
+        float3 wheel_pos = wheel_tracker->Pos();
+        float3 forces = wheel_tracker->ContactAcc();
+        forces *= wheel_mass; // Convert acceleration to force
+        
+        // Calculate wheel sinkage (difference between initial height and current height)
+        float current_sinkage = initial_wheel_height - wheel_pos.z;
+       
+       	// Drawbar calculation
+        float drawbar_pull_coeff = forces.x / total_pressure;
+        // TCF calc
+        float total_contact_force = sqrt(forces.x * forces.x + forces.y * forces.y + forces.z * forces.z);
+        // CFUR calc 
+        float CFUR = forces.x / (0.8 * forces.z);
+        // Total Work done
+	float3 lin_vel = wheel_tracker->Vel();
+	float twd = lin_vel.x * forces.x * step_size;
+        
+        // Every step_size push new data rather than with the frames (smoother)
+        data_file << t << " " << current_sinkage << " " << drawbar_pull_coeff
+                  << " " << total_contact_force << " " << CFUR << " " << twd <<  std::endl;
+
+
         if (curr_step % out_steps == 0) {
             char filename[200], meshname[200];
             std::cout << "Outputting frame: " << currframe << std::endl;
@@ -198,15 +232,16 @@ int main() {
             DEMSim.WriteSphereFile(std::string(filename));
             DEMSim.WriteMeshFile(std::string(meshname));
             DEMSim.ShowThreadCollaborationStats();
+            
+            // Write data to the data file
         }
 
         if (curr_step % report_steps == 0) {
-            float3 forces = wheel_tracker->ContactAcc();
-            forces *= wheel_mass;
             std::cout << "Time: " << t << std::endl;
             std::cout << "Force on wheel: " << forces.x << ", " << forces.y << ", " << forces.z << std::endl;
             std::cout << "Drawbar pull coeff: " << forces.x / total_pressure << std::endl;
             std::cout << "Max system velocity: " << max_v_finder->GetValue() << std::endl;
+            std::cout << "Max wheel sinkage: " << max_sinkage << std::endl;
         }
 
         DEMSim.DoDynamics(step_size);
@@ -218,6 +253,8 @@ int main() {
 
     DEMSim.ShowTimingStats();
     DEMSim.ShowAnomalies();
+
+    data_file.close();
 
     std::cout << "WheelDPSimpilified demo exiting..." << std::endl;
     return 0;

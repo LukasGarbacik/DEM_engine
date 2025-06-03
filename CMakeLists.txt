@@ -9,6 +9,9 @@
 
 cmake_minimum_required(VERSION 3.18)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-12.1)
+
 # Version information
 set(DEME_VERSION_MAJOR   0)
 set(DEME_VERSION_MINOR   0)
@@ -24,13 +27,15 @@ project(
 # Additional Packages
 # ---------------------------------------------------------------------------- #
 
+add_definitions(-lstdc++fs)
+#SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -ldl -lstdc++fs")
+
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(FetchContent)
 
 include(cmake/FixNinjaColors.cmake)
 fix_ninja_colors()
-
 
 find_package(CUDAToolkit REQUIRED)
 

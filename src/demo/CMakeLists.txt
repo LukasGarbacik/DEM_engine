@@ -78,6 +78,7 @@ FOREACH(PROGRAM ${DEMOS})
 		target_link_libraries(${PROGRAM} 
 			PUBLIC ${LIBRARIES}
 			PUBLIC ${EXTERNAL_LIBRARIES}
+			stdc++fs
 		)
 		
 		add_dependencies(${PROGRAM} ${LIBRARIES})

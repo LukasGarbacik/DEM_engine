@@ -19,11 +19,13 @@ if(USE_CHPF)
 		DEM
 		PUBLIC CUB::CUB
 		PUBLIC ${ChPF_IMPORTED_NAME}
+		stdc++fs
 	)
 else()
 	target_link_libraries(
 		DEM
 		PUBLIC CUB::CUB
+		stdc++fs
 	)
 endif()
 
