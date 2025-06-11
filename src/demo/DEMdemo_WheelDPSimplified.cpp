@@ -49,8 +49,8 @@ int main() {
     DEMSim.SetNoForceRecord();
 
     // E, nu, CoR, mu, Crr...
-    auto mat_type_wheel = DEMSim.LoadMaterial({{"E", 1e9}, {"nu", 0.3}, {"CoR", 0.6}, {"mu", 0.5}, {"Crr", 0.01}});
-    auto mat_type_terrain = DEMSim.LoadMaterial({{"E", 1e9}, {"nu", 0.3}, {"CoR", 0.4}, {"mu", 0.5}, {"Crr", 0.01}});
+    auto mat_type_wheel = DEMSim.LoadMaterial({{"E", 1e9}, {"nu", 0.3}, {"CoR", 0.6}, {"mu", 0.5}, {"Crr", 0.01}, {"Cohesion", 50}});
+    auto mat_type_terrain = DEMSim.LoadMaterial({{"E", 1e9}, {"nu", 0.3}, {"CoR", 0.4}, {"mu", 0.5}, {"Crr", 0.01}, {"Cohesion", 50}});
     // If you don't have this line, then mu between drum material and granular material will be the average of the
     // two.
     DEMSim.SetMaterialPropertyPair("mu", mat_type_wheel, mat_type_terrain, 0.35);
@@ -78,8 +78,8 @@ int main() {
     float added_pressure = total_pressure - wheel_weight;
     float wheel_IYY = wheel_mass * wheel_rad * wheel_rad / 2;
     float wheel_IXX = (wheel_mass / 12) * (3 * wheel_rad * wheel_rad + wheel_width * wheel_width);
-    auto wheel =
-        DEMSim.AddWavefrontMeshObject(GetDEMEDataFile("mesh/rover_wheels/wheels/wheel1.obj"), mat_type_wheel);
+    auto wheel = 
+        DEMSim.AddWavefrontMeshObject(GetDEMEDataFile("mesh/rover_wheels/curiosity_wheel.obj"), mat_type_wheel);
     wheel->SetMass(wheel_mass);
     wheel->SetMOI(make_float3(wheel_IXX, wheel_IYY, wheel_IXX));
     // Give the wheel a family number so we can potentially add prescription
@@ -151,6 +151,14 @@ int main() {
     auto total_mass_finder = DEMSim.CreateInspector("clump_mass");
     auto max_v_finder = DEMSim.CreateInspector("clump_max_absv");
 
+
+    // Custom force model for cohesion
+    auto my_force_model = DEMSim.ReadContactForceModel("ForceModelWithCohesion.cu");
+
+    my_force_model->SetPerContactWildcards({"delta_time", "delta_tan_x", "delta_tan_y", "delta_tan_z"});
+    my_force_model->SetMustPairwiseMatProp({"CoR", "mu", "Crr", "Cohesion"});
+
+
     // Make ready for simulation
     DEMSim.SetInitTimeStep(step_size);
     DEMSim.SetGravitationalAcceleration(make_float3(0, 0, -G_earth_mag));
@@ -189,8 +197,6 @@ int main() {
 
     // Switch wheel from free fall into DP test
     DEMSim.DoDynamicsThenSync(0);
-    // You don't have to do this! I am just testing if sync-ing it twice breaks the system.
-    DEMSim.DoDynamicsThenSync(0);
     DEMSim.ChangeFamily(1, 2);
     DEMSim.SetGravitationalAcceleration(make_float3(0, 0, -G_phobos_mag));
 
@@ -216,8 +222,8 @@ int main() {
         // CFUR calc 
         float CFUR = forces.x / (0.8 * forces.z);
         // Total Work done
-	float3 lin_vel = wheel_tracker->Vel();
-	float twd = lin_vel.x * forces.x * step_size;
+	    float3 lin_vel = wheel_tracker->Vel();
+	    float twd = lin_vel.x * forces.x * step_size;
         
         // Every step_size push new data rather than with the frames (smoother)
         data_file << t << " " << current_sinkage << " " << drawbar_pull_coeff
