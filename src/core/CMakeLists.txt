@@ -12,7 +12,8 @@ configure_file(
 	#	USE_SOURCE_PERMISSIONS ## This doesn't work in CMake <3.20
 	@ONLY
 )
-
+set(NVIDIAJitifyPath "${CMAKE_CURRENT_SOURCE_DIR}/jitify")
+message(STATUS "[core] Using local Jitify path: ${NVIDIAJitifyPath}")
 
 message(STATUS "${core_message} Extracting NVIDIA Jitify header...") 
 configure_file(

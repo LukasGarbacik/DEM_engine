@@ -22,7 +22,11 @@ project(
 	VERSION ${DEME_VERSION_MAJOR}.${DEME_VERSION_MINOR}.${DEME_VERSION_PATCH}
 	LANGUAGES CXX CUDA
 )
-
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
+    # Target both Pascal (GTX 1080 Ti, compute 6.1) and Turing (T400, compute 7.5)
+    set(CMAKE_CUDA_ARCHITECTURES "61;75")
+    message(STATUS "[CUDA] Building for architectures 61 (Pascal) and 75 (Turing)")
+endif()
 # ---------------------------------------------------------------------------- #
 # Additional Packages
 # ---------------------------------------------------------------------------- #
